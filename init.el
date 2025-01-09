@@ -1206,7 +1206,7 @@
                    number-of-commits
                  1)))
       (magit-reset-soft (format "HEAD^%d" num)))))
-
+(setq auth-sources '("~/.authinfo.gpg"))
 (use-package forge
   :ensure t
   :after magit)
