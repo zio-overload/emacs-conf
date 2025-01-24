@@ -1,6 +1,6 @@
 ;;; package -- sumary
 ;;;Commentary:
-;;; This is zio-overload first GNU emacs config (test3)
+;;; This is zio-overload first GNU emacs config (test4)
 ;;; Code:
 (setq garbage-collection-messages t)
 ;; Set garbage collection threshold to 1GB.
@@ -1201,17 +1201,20 @@
   (setq magit-process-finish-apply-ansi-colors t)
   (setq auth-sources '("~/.authinfo.gpg"))
   ;; Define a function to retrieve credentials from auth-source
-  (defun my-magit-credentials (_host _user _port)
-    "Retrieve GitHub credentials from auth-source for Magit."
-    (let ((auth-info (auth-source-search :host "github.com" :user "zio-overload" :require '(:user :secret))))
+  (defun my-magit-get-credentials (prompt)
+    "Retrieve GitHub credentials dynamically from auth-source for Magit.
+The PROMPT is ignored, and the function uses `auth-source` to retrieve credentials."
+    (let* ((repo-dir (magit-toplevel))
+           (user (magit-get "user.name"))  ; Retrieve the Git user from the repo
+           (auth-info (auth-source-search :host "github.com" :user user :require '(:user :secret))))
       (when auth-info
-        (let ((user (plist-get (car auth-info) :user))
-              (secret (plist-get (car auth-info) :secret)))
+        (let ((secret (plist-get (car auth-info) :secret)))
           (if (functionp secret)
-              (funcall secret)  ; Retrieve the secret if it's a function
+              (funcall secret)  ; Call the function to get the secret
             secret)))))
-  ;; Hook the credentials function into Magit
-  (setq magit-process-find-password-functions '(my-magit-credentials))
+
+  (setq magit-process-find-password-functions '(my-magit-get-credentials))
+
   (defun magit/undo-last-commit (number-of-commits)
     "Undoes the latest commit or commits without loosing changes"
     (interactive "P")
