@@ -1,6 +1,6 @@
 ;;; package -- sumary
 ;;;Commentary:
-;;; This is zio-overload first GNU emacs config (test2)
+;;; This is zio-overload first GNU emacs config (test3)
 ;;; Code:
 (setq garbage-collection-messages t)
 ;; Set garbage collection threshold to 1GB.
@@ -1199,6 +1199,19 @@
   (magit-process-finish-apply-ansi-colors t)
   :init
   (setq magit-process-finish-apply-ansi-colors t)
+  (setq auth-sources '("~/.authinfo.gpg"))
+  ;; Define a function to retrieve credentials from auth-source
+  (defun my-magit-credentials (_host _user _port)
+    "Retrieve GitHub credentials from auth-source for Magit."
+    (let ((auth-info (auth-source-search :host "github.com" :user "zio-overload" :require '(:user :secret))))
+      (when auth-info
+        (let ((user (plist-get (car auth-info) :user))
+              (secret (plist-get (car auth-info) :secret)))
+          (if (functionp secret)
+              (funcall secret)  ; Retrieve the secret if it's a function
+            secret)))))
+  ;; Hook the credentials function into Magit
+  (setq magit-process-find-password-functions '(my-magit-credentials))
   (defun magit/undo-last-commit (number-of-commits)
     "Undoes the latest commit or commits without loosing changes"
     (interactive "P")
@@ -1206,7 +1219,7 @@
                    number-of-commits
                  1)))
       (magit-reset-soft (format "HEAD^%d" num)))))
-(setq auth-sources '("~/.authinfo.gpg"))
+
 (use-package forge
   :ensure t
   :after magit)
