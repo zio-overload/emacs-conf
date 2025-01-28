@@ -1,6 +1,6 @@
 ;;; package -- sumary
 ;;;Commentary:
-;;; This is zio-overload first GNU emacs config (test4)
+;;; This is zio-overload first GNU emacs config (test5)
 ;;; Code:
 (setq garbage-collection-messages t)
 ;; Set garbage collection threshold to 1GB.
@@ -1204,14 +1204,14 @@
   (defun my-magit-get-credentials (prompt)
     "Retrieve GitHub credentials dynamically from auth-source for Magit.
 The PROMPT is ignored, and the function uses `auth-source` to retrieve credentials."
-    (let* ((repo-dir (magit-toplevel))
-           (user (magit-get "user.name"))  ; Retrieve the Git user from the repo
-           (auth-info (auth-source-search :host "github.com" :user user :require '(:user :secret))))
+    (let* ((auth-info (auth-source-search :host "github.com" :require '(:user :secret))))
       (when auth-info
-        (let ((secret (plist-get (car auth-info) :secret)))
+        (let* ((entry (car auth-info))
+               (user (plist-get entry :user))
+               (secret (plist-get entry :secret)))
           (if (functionp secret)
               (funcall secret)  ; Call the function to get the secret
-            secret)))))
+            (cons user secret))))))  ; Return a cons cell (user . secret)
 
   (setq magit-process-find-password-functions '(my-magit-get-credentials))
 
@@ -1230,7 +1230,6 @@ The PROMPT is ignored, and the function uses `auth-source` to retrieve credentia
 (use-package git-gutter
   :ensure t
   :hook (after-init . global-git-gutter-mode))
-
 ;; https://github.com/purcell/ibuffer-vc/blob/master/ibuffer-vc.el
 (use-package ibuffer-vc
   :ensure t
