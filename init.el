@@ -1,6 +1,6 @@
 ;;; package -- sumary
 ;;;Commentary:
-;;; This is zio-overload first GNU emacs config (test5)
+;;; This is zio-overload first GNU emacs config (test6)
 ;;; Code:
 (setq garbage-collection-messages t)
 ;; Set garbage collection threshold to 1GB.
