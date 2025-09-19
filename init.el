@@ -1,6 +1,6 @@
 ;;; package -- sumary
 ;;;Commentary:
-;;; This is zio-overload first GNU emacs config (test7)
+;;; This is zio-overload first GNU emacs config (test9)
 ;;; Code:
 (setq garbage-collection-messages t)
 ;; Set garbage collection threshold to 1GB.
@@ -20,16 +20,18 @@
                          ("org" . "https://orgmode.org/elpa/")))
 ;; (setq gnutls-algorithm-priority "normal:-vers-tls1.3")
 (package-initialize)
+;; disable fast-folding display optimization
+;;(setq redisplay-skip-fontification-on-input nil)
 ;;;; custom-font
 (set-face-attribute 'default nil
                     ;; :family "Anonymous Pro"
                     :family "JetBrainsMono Nerd Font"
-                    :height 95)
-;; (set-face-attribute 'variable-pitch nil
-;;                     :family "Anonymous Pro")
-;; (set-face-attribute 'fixed-pitch nil
-;;                     :family "Hack Nerd Font Mono")
-;; (add-hook 'text-mode-hook #'variable-pitch-mode)
+                    :height 92)
+(set-face-attribute 'variable-pitch nil
+                    :family "Anonymous Pro")
+;;(set-face-attribute 'fixed-pitch nil
+;;:family "Hack Nerd Font Mono")
+;;(add-hook 'text-mode-hook #'variable-pitch-mode)
 
 ;;;; set custom themes path (for autothemer and manual themes installations, not used with doom-themes)
 (setq custom-theme-directory "~/.emacs.d/themes")
@@ -481,14 +483,27 @@
 (use-package whitespace
   :ensure nil
   :defer
-  :hook (before-save . whitespace-cleanup))
-
+  :hook (before-save . whitespace-cleanup)
+  :custom
+  (whitespace-line-column nil))
 ;;;; ansi-color
 (use-package ansi-color
   :ensure nil
   :defer
-  :hook (compilation-filter . gopar/colorize-compilation-buffer)
+  :hook (compilation-filter . ansi-color-compilation-filter)
   :init
+  (defvar gopar-ansi-escape-re
+    (rx (or ?\233 (and ?\e ?\[))
+        (zero-or-more (char (?0 . ?\?)))
+        (zero-or-more (char ?\s ?- ?\/))
+        (char (?@ . ?~))))
+
+  (defun gopar/nuke-ansi-escapes (beg end)
+    (save-excursion
+      (goto-char beg)
+      (while (re-search-forward gopar-ansi-escape-re end t)
+        (replace-match ""))))
+
   (defun gopar/compilation-nuke-ansi-escapes ()
     (toggle-read-only)
     (gopar/nuke-ansi-escapes (point-min) (point-max))
@@ -757,8 +772,17 @@
   :hook ((eshell-mode . capf-autosuggest-mode))
   :custom
   (capf-autosuggest-dwim-next-line nil))
+;;;; AUTOCOMPLETE
 
-;;;; corfu
+(use-package dabbrev
+  :defer t
+  :custom
+  (dabbrev-upcase-means-case-search t)
+  (dabbrev-check-all-buffers nil)
+  (dabbrev-check-other-buffers t)
+  (dabbrev-friend-buffer-function 'dabbrev--same-major-mode-p)
+  (dabbrev-ignored-buffer-regexps '("\\.\\(?:pdf\\|jpe?g\\|png\\)\\'")))
+
 (use-package corfu
   :ensure t
   ;; Originally, I liked the idea of `corfu-send` but this makes it behave
@@ -769,34 +793,10 @@
   :custom
   (corfu-cycle t)                ;; Enable cycling for `corfu-next/previous'
   (corfu-auto t)                 ;; Enable auto completion
-  (corfu-auto-prefix 2)          ;; Minimun lenght prefix for completition
-  (corfu-auto-delay 0)           ;; No delay completition
-  (corfu-popupinfo-delay '(0.5 . 0.2)) ;; Automatically update info popup after numbr of seconds
-  (corfu-preview-current 'insert) ;; Insert previewed candidate
-  (corfu-preselect 'prompt) ;;
   (corfu-on-exact-match 'insert) ;; Insert when there's only one match
   (corfu-quit-no-match t)        ;; Quit when ther is no match
-  :bind (:map corfu-map
-              ("M-SPC"      . corfu-insert-separator)
-              ("TAB"        . corfu-insert)
-              ;; ([tab]        . corfu-insert)
-              ("A-TAB"      . corfu-next)
-              ("S-TAB"    . corfu-previous)
-              ;; ("S-<return>" . corfu-insert)
-              ("RET"        . corfu-insert))
-
   :init
   (global-corfu-mode)
-  (corfu-history-mode)
-  (corfu-popupinfo-mode)
-  :config
-  (add-hook 'eshell-mode-hook
-            (lambda () (setq-local corfu-quit-at-boundary t
-                                   corfu-quit-no-match t
-                                   corfu-auto nil)
-              (corfu-mode))
-            nil
-            t)
 
   (defun corfu-enable-always-in-minibuffer ()
     "Enable Corfu in the minibuffer if Vertico/Mct are not active."
@@ -810,12 +810,155 @@
 
   (add-hook 'minibuffer-setup-hook #'corfu-enable-always-in-minibuffer 1))
 
+(use-package cape
+  :ensure t
+  :bind ("C-c SPC" . cape-dabbrev)
+  :custom
+  (cape-dict-case-replace nil)
+  (cape-dabbrev-buffer-function 'cape-same-mode-buffers)
+
+  :init
+  (defun gopar/cape-dict-only-in-comments ()
+    (cape-wrap-inside-comment 'cape-dict))
+
+  (defun gopar/cape-dict-only-in-strings ()
+    (cape-wrap-inside-string 'cape-dict))
+
+  (defun gopar/cape-yasnippet-keyword-dabbrev ()
+    (cape-wrap-super #'yasnippet-capf #'cape-keyword #'cape-dabbrev))
+
+  (add-to-list 'completion-at-point-functions #'cape-file)
+  (add-to-list 'completion-at-point-functions #'gopar/cape-yasnippet-keyword-dabbrev)
+  (add-to-list 'completion-at-point-functions #'gopar/cape-dict-only-in-strings)
+  (add-to-list 'completion-at-point-functions #'gopar/cape-dict-only-in-comments))
+
+(use-package orderless
+  :ensure t
+  :after consult
+  :custom
+  (completion-styles '(orderless basic initials flex))
+  (completion-category-overrides '((file (styles basic partial-completion)))))
+
+(use-package consult
+  :ensure
+  :commands (gopar/consult-line consult-buffer consult-bookmark consult-theme consult-line-thing-at-point)
+  :bind (("C-s" . gopar/consult-line)
+         ("C-c m" . consult-man)
+         ("C-c i" . consult-info)
+         ("C-c M-x" . consult-mode-command)
+         ;; C-x bindings in `ctl-x-map'
+         ("C-x b" . consult-buffer)                ;; orig. switch-to-buffer
+         ("C-x M-:" . consult-complex-command)     ;; orig. repeat-complex-command
+         ("C-x 4 b" . consult-buffer-other-window) ;; orig. switch-to-buffer-other-window
+         ("C-x 5 b" . consult-buffer-other-frame)  ;; orig. switch-to-buffer-other-frame
+         ("C-x t b" . consult-buffer-other-tab)    ;; orig. switch-to-buffer-other-tab
+         ("C-x r b" . consult-bookmark)
+         ("C-x r s" . consult-register-store)
+         ("C-x r i" . consult-register)
+
+         ;; Custom M-# bindings for fast register access
+         ("M-#" . consult-register-load)
+         ("M-'" . consult-register-store)          ;; orig. abbrev-prefix-mark (unrelated)
+         ("C-M-#" . consult-register)
+
+         ;; M-g bindings in `goto-map'
+         ("M-g e" . consult-compile-error)
+         ("M-g f" . consult-flycheck)               ;; Alternative: consult-flycheck
+         ("M-g M-g" . consult-goto-line)           ;; orig. goto-line
+         ("M-g o" . consult-outline)               ;; Alternative: consult-org-heading
+         ("M-g m" . consult-mark)
+         ("M-g k" . consult-global-mark)
+         ("M-g i" . consult-imenu)
+         ("M-g I" . consult-imenu-multi)
+
+         ;; M-s bindings in `search-map'
+         ("M-s d" . consult-find)
+         ("M-s c" . consult-locate)
+         ("M-s g" . consult-grep)
+         ("M-s G" . consult-git-grep)
+         ("M-s r" . consult-ripgrep)
+         ("M-s l" . consult-line)
+         ("M-s L" . consult-line-multi)
+         ("M-s k" . consult-keep-lines)
+         ("M-s f" . consult-focus-lines)
+
+         ;; Random bindings
+         ("C-z" . consult-theme)
+         ("M-y" . consult-yank-pop)
+
+         ;; Isearch integration
+         ("M-s e" . consult-isearch-history)
+         :map isearch-mode-map
+         ("M-e" . consult-isearch-history)         ;; orig. isearch-edit-string
+         ("M-s e" . consult-isearch-history)       ;; orig. isearch-edit-string
+         ("M-s l" . consult-line)                  ;; needed by consult-line to detect isearch
+         ("M-s L" . consult-line-multi)            ;; needed by consult-line to detect isearch
+
+         :map minibuffer-local-map
+         ("M-s" . consult-history)                 ;; orig. next-matching-history-element
+         ("M-r" . consult-history))
+
+  :config
+  (setopt consult-project-function (lambda (_) (projectile-project-root)))
+  (setopt xref-show-xrefs-function #'consult-xref
+          xref-show-definitions-function #'consult-xref)
+  (setopt consult-narrow-key "<")
+  (setopt consult-line-start-from-top nil)
+  (consult-customize
+   consult-line
+   :add-history (seq-some #'thing-at-point '(region symbol)))
+
+  (defalias 'consult-line-thing-at-point 'consult-line)
+
+  (consult-customize
+   consult-line-thing-at-point
+   :initial (thing-at-point 'symbol))
+
+  (defun gopar/consult-line (&optional arg)
+    "Start consult search with selected region if any.
+If used with a prefix, it will search all buffers as well."
+    (interactive "p")
+    (let ((cmd (if current-prefix-arg '(lambda (arg) (consult-line-multi t arg)) 'consult-line)))
+      (if (use-region-p)
+          (let ((regionp (buffer-substring-no-properties (region-beginning) (region-end))))
+            (deactivate-mark)
+            (funcall cmd regionp))
+        (funcall cmd "")))))
+
+(use-package consult-flycheck :ensure t :defer t :commands consult-flycheck)
+
+(use-package consult-org-roam
+  :ensure t
+  :after org-roam
+  :custom
+  (consult-org-roam-grep-func #'consult-ripgrep)
+  ;; Configure a custom narrow key for `consult-buffer'
+  (consult-org-roam-buffer-narrow-key ?r)
+  ;; Display org-roam buffers right after non-org-roam buffers
+  ;; in consult-buffer (and not down at the bottom)
+  (consult-org-roam-buffer-after-buffers nil)
+  :config
+  ;; Eventually suppress previewing for certain functions
+  (consult-customize
+   consult-org-roam-forward-links
+   :preview-key (kbd "M-.")))
+
+(use-package marginalia
+  :ensure
+  :init
+  ;; Must be in the :init section of use-package such that the mode gets
+  ;; enabled right away. Note that this forces loading the package.
+  (marginalia-mode))
+
+
+
+
 ;;; dashboard
 (use-package dashboard
   :ensure t
   :custom
   ;;(dashboard-startup-banner 'logo)
-  (dashboard-startup-banner "/home/zio/.emacs.d/elpa/dashboard-20240923.2345/banners/logo.xpm") ;; we need to convert image to .xpm to avoid background img issues
+  (dashboard-startup-banner "/home/zio/.emacs.d/elpa/dashboard-20250708.57/banners/logo.xpm") ;; we need to convert image to .xpm to avoid background img issues
   (dashboard-center-content t)
   (dashboard-show-shortcuts nil)
   (dashboard-set-heading-icons t)
@@ -874,25 +1017,40 @@
       (insert (shell-command-to-string cmd))))
   :config
   (dashboard-setup-startup-hook))
+;;;display fill column
+(use-package display-fill-column-indicator
+  :ensure nil
+  :hook (;; (python-mode . display-fill-column-indicator-mode)
+         (org-mode . display-fill-column-indicator-mode))
+  )
 
 ;;;; org-mode
 (use-package org
   :defer
   :custom
-  (org-agenda-include-diary t)
+                                        ;(org-agenda-include-diary t)
   ;; Where the org files live
   (org-directory "~/.emacs.d/org/")
   ;; Where archives should go
   (org-archive-location (concat (expand-file-name "~/.emacs.d/org/private/org-roam/gtd/archives.org") "::"))
   ;; Make sure we see syntax highlighting
   (org-src-fontify-natively t)
+  (org-tag-alist '(("emacs" . ?e)
+                   ("car" . ?c)
+                   ("home" . ?o)
+                   ("project" . ?p)
+                   ("fun" . ?f)
+                   ("health" . ?h)
+                   ("misc" . ?i)
+                   ("tv" . ?t)
+                   ("money" . ?m)))
   ;; I dont use it for subs/super scripts
   (org-use-sub-superscripts nil)
   ;; Should everything be hidden?
-  (org-startup-folded 'content)
+  (org-startup-folded t)
   (org-M-RET-may-split-line '((default . nil)))
-  ;; Don't hide stars
-  (org-hide-leading-stars nil)
+  ;; Hide stars
+  (org-hide-leading-stars t)
   (org-hide-emphasis-markers nil)
   ;; Show as utf-8 chars
   (org-pretty-entities t)
@@ -912,7 +1070,7 @@
   ;;
   (org-fontify-quote-and-verse-blocks t)
   ;; See down arrow instead of "..." when we have subtrees
-  ;; (org-ellipsis "⤵")
+  (org-ellipsis "⤵")
   ;; catch invisible edit
   ( org-catch-invisible-edits 'show-and-error)
   ;; Only useful for property searching only but can slow down search
@@ -938,12 +1096,75 @@
   ;; If there was no todo state, then dont set a state
   (org-todo-repeat-to-state t)
   ;; Refile options
-  (org-refile-use-outline-path 'file)
-  (org-refile-allow-creating-parent-nodes 'confirm))
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;; WEB-DEVELOPMENT-CONFIG ;;;;
+                                        ; (org-refile-use-outline-path 'file)
+                                        ; (org-refile-allow-creating-parent-nodes 'confirm)
+                                        ;(org-refile-targets '(("~/.emacs.d/org/private/org-roam/gtd/gtd.org" :maxlevel . 3)
+                                        ;                      ("~/.emacs.d/org/private/org-roam/gtd/someday.org" :level . 1)
+                                        ;                      ("~/.emacs.d/org/private/org-roam/gtd/tickler.org" :maxlevel . 1)
+                                        ;                      ("~/.emacs.d/org/private/org-roam/gtd/repeat.org" :maxlevel . 1)
+                                        ;                      ))
+  ;; Lets customize which modules we load up
+  (org-modules '(;; ol-eww
+                 ;; Stuff I've enabled below
+                                        ; org-habit
+                 ;; org-checklist
+                 ))
+  (org-special-ctrl-a/e t)
+  (org-insert-heading-respect-content t)
+  :hook ((org-mode . org-indent-mode)
+                                        ;(org-mode . variable-pitch-mode -1)
+         (org-mode . org-display-inline-images))
+  :custom-face
+  (org-scheduled-previously ((t (:foreground "orange"))))
+  :config
+  (org-babel-do-load-languages
+   'org-babel-load-languages
+   '((sql . t)
+     (sqlite . t)
+     (python . t)
+     (java . t)
+     ;; (cpp . t)
+     (C . t)
+     (emacs-lisp . t)
+     (shell . t)))
+  ;; Save history throughout sessions
+  (org-clock-persistence-insinuate))
 
+(with-eval-after-load 'org
+  (defun my/org-cycle-redraw-on-idle (&rest _)
+    "Schedule a short idle redraw after org folding/unfolding."
+    (when (derived-mode-p 'org-mode)
+      ;; 0.05s delay; adjust up if needed
+      (run-with-idle-timer 0.05 nil (lambda () (ignore-errors (redraw-display))))))
+
+  (advice-add 'org-cycle :after #'my/org-cycle-redraw-on-idle)
+  (advice-add 'org-shifttab :after #'my/org-cycle-redraw-on-idle))
+
+;;; ORG MODERN
+
+(use-package org-modern
+  :ensure t
+  :after org
+  :custom
+  (org-modern-hide-stars nil)
+  (org-modern-fold-stars '(("▶" . "▼") ("▷" . "▽") ("⏵" . "⏷") ("▹" . "▿") ("▸" . "▾")))
+  :hook
+  (org-mode . org-modern-mode)
+  (org-agenda-finalize . org-modern-agenda))
+
+;;; ORG MODERN INDENT
+
+(use-package org-modern-indent
+  :ensure t
+  :after org
+  :vc (:url "https://github.com/jdtsmith/org-modern-indent/" :rev :newsest)
+  :init
+  (add-hook 'org-mode-hook #'org-modern-indent-mode 90))
+
+;;;; Web-DEVELOPMENT-CONFIG ;;;;
 (use-package treesit
+  :init
+  (require 'treesit)
   :mode (("\\.tsx\\'" . tsx-ts-mode)
          ("\\.js\\'"  . typescript-ts-mode)
          ("\\.mjs\\'" . typescript-ts-mode)
@@ -952,8 +1173,10 @@
          ("\\.ts\\'"  . typescript-ts-mode)
          ("\\.jsx\\'" . tsx-ts-mode)
          ("\\.json\\'" .  json-ts-mode)
+         ("\\.html\\'" . html-ts-mode)
          ("\\.Dockerfile\\'" . dockerfile-ts-mode)
          ("\\.prisma\\'" . prisma-ts-mode)
+
          ;; More modes defined here...
          )
   :preface
@@ -963,7 +1186,7 @@
     (dolist (grammar
              '((css . ("https://github.com/tree-sitter/tree-sitter-css" "v0.20.0"))
                (bash "https://github.com/tree-sitter/tree-sitter-bash")
-               (html . ("https://github.com/tree-sitter/tree-sitter-html" "v0.20.1"))
+               (html . ("https://github.com/tree-sitter/tree-sitter-html" "v0.23.2"))
                (javascript . ("https://github.com/tree-sitter/tree-sitter-javascript" "v0.21.2" "src"))
                (json . ("https://github.com/tree-sitter/tree-sitter-json" "v0.20.2"))
                (python . ("https://github.com/tree-sitter/tree-sitter-python" "v0.20.4"))
@@ -975,6 +1198,7 @@
                (c "https://github.com/tree-sitter/tree-sitter-c")
                (cpp "https://github.com/tree-sitter/tree-sitter-cpp")
                (toml "https://github.com/tree-sitter/tree-sitter-toml")
+               (vue . ("https://github.com/ikatyang/tree-sitter-vue" "v0.2.1"))
                (tsx . ("https://github.com/tree-sitter/tree-sitter-typescript" "v0.20.3" "tsx/src"))
                (typescript . ("https://github.com/tree-sitter/tree-sitter-typescript" "v0.20.3" "typescript/src"))
                (yaml . ("https://github.com/ikatyang/tree-sitter-yaml" "v0.5.0"))
@@ -1002,9 +1226,9 @@
              (c++-mode . c++-ts-mode)
              (c-or-c++-mode . c-or-c++-ts-mode)
              (bash-mode . bash-ts-mode)
-             (css-mode . css-ts-mode)
              (json-mode . json-ts-mode)
              (js-json-mode . json-ts-mode)
+             (html-mode . html-ts-mode)
              (sh-mode . bash-ts-mode)
              (sh-base-mode . bash-ts-mode)))
     (add-to-list 'major-mode-remap-alist mapping))
@@ -1012,11 +1236,36 @@
   (os/setup-install-grammars))
 
 (use-package flycheck
-  :ensure t
-  :init (global-flycheck-mode)
+  :ensure
+  :defer
+  :hook (((python-mode python-ts-mode) . flycheck-mode))
   :bind (:map flycheck-mode-map
-              ("M-n" . flycheck-next-error) ; optional but recommended error navigation
-              ("M-p" . flycheck-previous-error)))
+              ("M-g n" . flycheck-next-error)
+              ("M-g p" . flycheck-previous-error))
+  :init
+  ;; (setq fit-window-to-buffer-horizontally t)
+  ;; (setq window-resize-pixelwise t)
+  (setopt window-sides-vertical t)
+  (add-to-list 'display-buffer-alist
+               '("\\*Flycheck errors\\*"
+                 display-buffer-in-side-window
+                 (side . bottom)
+                 (slot . -1)
+                 (no-delete-other-windows . t)
+                 (window-height . .15)))
+
+  ;; Experimental
+  (defun gopar/flycheck-update-error-list ()
+    "Display errors using flycheck-list-errors if there are any errors.
+If there are no errors, kill the '*Flycheck errors*' buffer."
+    (if flycheck-current-errors
+        (flycheck-list-errors)
+      (let ((errors-buffer (get-buffer "*Flycheck errors*")))
+        (when errors-buffer
+          (kill-buffer errors-buffer)))))
+
+  :custom
+  (flycheck-flake8rc '(".flake8" "setup.cfg" "tox.ini" "pyproject.toml")))
 
 (use-package lsp-mode
   :diminish "LSP"
@@ -1025,13 +1274,14 @@
          (lsp-mode . lsp-enable-which-key-integration)
          ((tsx-ts-mode
            typescript-ts-mode
+           html-ts-mode
            js-ts-mode) . lsp-deferred))
   :custom
   (lsp-keymap-prefix "C-c l")           ; Prefix for LSP actions
   (lsp-completion-provider :none)       ; Using Corfu as the provider
   (lsp-diagnostics-provider :flycheck)
   (lsp-session-file (locate-user-emacs-file ".lsp-session"))
-  (lsp-log-io nil)                      ; IMPORTANT! Use only for debugging! Drastically affects performance
+  (lsp-log-io t)                      ; IMPORTANT! Use only for debugging! Drastically affects performance
   (lsp-keep-workspace-alive nil)        ; Close LSP server if all project buffers are closed
   (lsp-idle-delay 0.5)                  ; Debounce timer for `after-change-function'
   ;; core
@@ -1161,6 +1411,36 @@
   (setf (alist-get 'prettier-json apheleia-formatters)
         '("prettier" "--stdin-filepath" filepath))
   (apheleia-global-mode +1))
+
+;; After adding or updating a snippet run:
+;; =M-x yas-recompile-all=
+;; =M-x yas-reload-all=
+(use-package yasnippet
+  :ensure t
+  :defer
+  :hook ((prog-mode . yas-minor-mode)
+         (org-mode . yas-minor-mode)
+         (fundamental-mode . yas-minor-mode)
+         (text-mode . yas-minor-mode)
+         (eshell-mode . yas-minor-mode)
+         ;; (after-init . yas-reload-all)
+         ))
+(use-package yasnippet-snippets
+  :ensure t
+  :defer)
+
+(use-package yasnippet-capf
+  :ensure t
+  :defer t
+  :vc (:url "https://github.com/elken/yasnippet-capf" :rev :newsest)
+  )
+
+(use-package consult-yasnippet
+  :ensure t
+  :after yasnippet
+  :bind (:map yas-minor-mode-map
+              ("C-c C-SPC" . consult-yasnippet)))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; Ibuffer
 ;; Ibuffer Icons Sets It'S Own Local Buffer Format And Overrides The =ibuffer-formats= variable.
@@ -1247,30 +1527,42 @@ The PROMPT is ignored, and the function uses `auth-source` to retrieve credentia
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(custom-safe-themes
-   '("b9761a2e568bee658e0ff723dd620d844172943eb5ec4053e2b199c59e0bcc22" "6e33d3dd48bc8ed38fd501e84067d3c74dfabbfc6d345a92e24f39473096da3f" "f4d1b183465f2d29b7a2e9dbe87ccc20598e79738e5d29fc52ec8fb8c576fcfd" "93011fe35859772a6766df8a4be817add8bfe105246173206478a0706f88b33d" "88f7ee5594021c60a4a6a1c275614103de8c1435d6d08cc58882f920e0cec65e" "4594d6b9753691142f02e67b8eb0fda7d12f6cc9f1299a49b819312d6addad1d" "dfb1c8b5bfa040b042b4ef660d0aab48ef2e89ee719a1f24a4629a0c5ed769e8" "f5f80dd6588e59cfc3ce2f11568ff8296717a938edd448a947f9823a4e282b66" "df782d1d31bc53de4034dacf7dbf574bf7513df8104486738a9b425693451eba" "b754d3a03c34cfba9ad7991380d26984ebd0761925773530e24d8dd8b6894738" "81f53ee9ddd3f8559f94c127c9327d578e264c574cda7c6d9daddaec226f87bb" "e4a702e262c3e3501dfe25091621fe12cd63c7845221687e36a79e17cf3a67e0" "d481904809c509641a1a1f1b1eb80b94c58c210145effc2631c1a7f2e4a2fdf4" "2721b06afaf1769ef63f942bf3e977f208f517b187f2526f0e57c1bd4a000350" "3c08da65265d80a7c8fc99fe51df3697d0fa6786a58a477a1b22887b4f116f62" "48042425e84cd92184837e01d0b4fe9f912d875c43021c3bcb7eeb51f1be5710" "0c83e0b50946e39e237769ad368a08f2cd1c854ccbcd1a01d39fdce4d6f86478" "c20728f5c0cb50972b50c929b004a7496d3f2e2ded387bf870f89da25793bb44" "d2ab3d4f005a9ad4fb789a8f65606c72f30ce9d281a9e42da55f7f4b9ef5bfc6" "daa27dcbe26a280a9425ee90dc7458d85bd540482b93e9fa94d4f43327128077" default))
+   '("b9761a2e568bee658e0ff723dd620d844172943eb5ec4053e2b199c59e0bcc22"
+     "6e33d3dd48bc8ed38fd501e84067d3c74dfabbfc6d345a92e24f39473096da3f"
+     "f4d1b183465f2d29b7a2e9dbe87ccc20598e79738e5d29fc52ec8fb8c576fcfd"
+     "93011fe35859772a6766df8a4be817add8bfe105246173206478a0706f88b33d"
+     "88f7ee5594021c60a4a6a1c275614103de8c1435d6d08cc58882f920e0cec65e"
+     "4594d6b9753691142f02e67b8eb0fda7d12f6cc9f1299a49b819312d6addad1d"
+     "dfb1c8b5bfa040b042b4ef660d0aab48ef2e89ee719a1f24a4629a0c5ed769e8"
+     "f5f80dd6588e59cfc3ce2f11568ff8296717a938edd448a947f9823a4e282b66"
+     "df782d1d31bc53de4034dacf7dbf574bf7513df8104486738a9b425693451eba"
+     "b754d3a03c34cfba9ad7991380d26984ebd0761925773530e24d8dd8b6894738"
+     "81f53ee9ddd3f8559f94c127c9327d578e264c574cda7c6d9daddaec226f87bb"
+     "e4a702e262c3e3501dfe25091621fe12cd63c7845221687e36a79e17cf3a67e0"
+     "d481904809c509641a1a1f1b1eb80b94c58c210145effc2631c1a7f2e4a2fdf4"
+     "2721b06afaf1769ef63f942bf3e977f208f517b187f2526f0e57c1bd4a000350"
+     "3c08da65265d80a7c8fc99fe51df3697d0fa6786a58a477a1b22887b4f116f62"
+     "48042425e84cd92184837e01d0b4fe9f912d875c43021c3bcb7eeb51f1be5710"
+     "0c83e0b50946e39e237769ad368a08f2cd1c854ccbcd1a01d39fdce4d6f86478"
+     "c20728f5c0cb50972b50c929b004a7496d3f2e2ded387bf870f89da25793bb44"
+     "d2ab3d4f005a9ad4fb789a8f65606c72f30ce9d281a9e42da55f7f4b9ef5bfc6"
+     "daa27dcbe26a280a9425ee90dc7458d85bd540482b93e9fa94d4f43327128077" default))
  '(org-fold-catch-invisible-edits 'show-and-error nil nil "Customized with use-package org")
  '(package-selected-packages
-   '(magit autothemer which-key ibuffer-vc dashboard spacious-padding vertico vertico-posframe solaire-mode all-the-icons all-the-icons-nerd-fonts treemacs nerd-icons-completion kanagawa-themes doom-themes doom-modeline)))
+   '(all-the-icons-completion all-the-icons-dired all-the-icons-ibuffer all-the-icons-nerd-fonts apheleia autothemer cape
+                              capf-autosuggest chatgpt-shell consult-flycheck consult-org-roam consult-yasnippet corfu
+                              corral dashboard devdocs dired-subtree doom-modeline doom-themes eshell-git-prompt
+                              eshell-syntax-highlighting forge git-gutter helpful highlight-indentation ibuffer-vc
+                              kanagawa-themes lsp-tailwindcss lsp-ui marginalia nerd-icons-completion nerd-icons-corfu
+                              no-littering orderless org-appear org-bullets org-inline-pdf org-modern org-modern-indent
+                              org-pdftools org-superstar prettier prettier-js projectile quelpa-use-package solaire-mode
+                              spacious-padding treemacs treesit-auto typescript-mode valign vertico-posframe
+                              visual-fill-column which-key yasnippet-capf yasnippet-snippets))
+ '(package-vc-selected-packages
+   '((org-modern-indent :url "https://github.com/jdtsmith/org-modern-indent/"))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(fringe ((t :background "#2d2b55")))
- '(header-line ((t :box (:line-width 4 :color "#1b1b38" :style nil))))
- '(header-line-highlight ((t :box (:color "#e3e9fa"))))
- '(keycast-key ((t)))
- '(line-number ((t :background "#2d2b55")))
- '(mode-line ((t :box (:line-width 6 :color "#1b1b38" :style nil))))
- '(mode-line-active ((t :box (:line-width 6 :color "#1b1b38" :style nil))))
- '(mode-line-highlight ((t :box (:color "#e3e9fa"))))
- '(mode-line-inactive ((t :box (:line-width 6 :color "#28264c" :style nil))))
- '(tab-bar-tab ((t :box (:line-width 4 :color "#2d2b55" :style nil))))
- '(tab-bar-tab-inactive ((t :box (:line-width 4 :color "#1e1e3f" :style nil))))
- '(tab-line-tab ((t)))
- '(tab-line-tab-active ((t)))
- '(tab-line-tab-inactive ((t)))
- '(vertical-border ((t :background "#2d2b55" :foreground "#2d2b55")))
- '(window-divider ((t (:background "#2d2b55" :foreground "#2d2b55"))))
- '(window-divider-first-pixel ((t (:background "#2d2b55" :foreground "#2d2b55"))))
- '(window-divider-last-pixel ((t (:background "#2d2b55" :foreground "#2d2b55")))))
+ )
